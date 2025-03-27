@@ -1,0 +1,1 @@
+ app = SecureFileManager(root)
