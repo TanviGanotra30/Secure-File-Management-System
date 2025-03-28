@@ -1,11 +1,9 @@
 import os
 import time
-import hashlib
+import binascii
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog, scrolledtext
 from cryptography.fernet import Fernet
-import binascii
-import re
 
 class SecureFileManager:
     def __init__(self, root):
@@ -17,13 +15,12 @@ class SecureFileManager:
         self.key = self.load_or_generate_key()
         self.cipher = Fernet(self.key)
         self.logged_in = False
-        self.current_user = None
 
         # UI Setup
         self.setup_ui()
 
     def setup_ui(self):
-        """Initialize all UI components"""
+        """Initialize UI components"""
         self.root.configure(bg="#f5f5f5")
 
         # Header
@@ -65,14 +62,6 @@ class SecureFileManager:
         self.file_content = scrolledtext.ScrolledText(right_panel, wrap=tk.WORD, width=60, height=20)
         self.file_content.pack(fill=tk.BOTH, expand=True, pady=5)
 
-        # Security Log
-        log_frame = ttk.LabelFrame(right_panel, text="Security Log", padding=10)
-        log_frame.pack(fill=tk.BOTH, pady=5)
-
-        self.security_log = scrolledtext.ScrolledText(log_frame, wrap=tk.WORD, width=60, height=8, bg='#f0f0f0')
-        self.security_log.pack(fill=tk.BOTH)
-        self.security_log.config(state=tk.DISABLED)
-
         # Status Bar
         self.status_var = tk.StringVar()
         self.status_var.set("Ready")
@@ -108,26 +97,13 @@ class SecureFileManager:
 
         if username == "admin" and password == "password":  # Change this for real authentication
             self.logged_in = True
-            self.current_user = username
             self.auth_status.config(text=f"Logged in as {username}", foreground="green")
-            self.log_security_event(f"User {username} logged in successfully")
             window.destroy()
         else:
             messagebox.showerror("Error", "Invalid credentials")
-            self.log_security_event("Failed login attempt", warning=True)
-
-    def log_security_event(self, message, warning=False):
-        """Log security events"""
-        timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
-        log_msg = f"[{timestamp}] {message}\n"
-
-        self.security_log.config(state=tk.NORMAL)
-        self.security_log.insert(tk.END, log_msg)
-        self.security_log.config(state=tk.DISABLED)
-        self.security_log.see(tk.END)
 
     def load_or_generate_key(self):
-        """Load encryption key or generate new one"""
+        """Load encryption key or generate a new one"""
         key_file = "secret.key"
         if os.path.exists(key_file):
             with open(key_file, "rb") as f:
@@ -139,7 +115,7 @@ class SecureFileManager:
             return key
 
     def open_file(self):
-        """Open and read a file"""
+        """Open and read a file with UTF-8 handling"""
         if not self.logged_in:
             messagebox.showerror("Error", "Please login first!")
             return
@@ -147,12 +123,11 @@ class SecureFileManager:
         filepath = filedialog.askopenfilename()
         if filepath:
             try:
-                with open(filepath, "r", encoding="utf-8") as f:
+                with open(filepath, "r", encoding="utf-8", errors="replace") as f:
                     content = f.read()
                 self.file_content.delete(1.0, tk.END)
                 self.file_content.insert(tk.END, content)
                 self.status_var.set(f"Opened: {os.path.basename(filepath)}")
-                self.log_security_event(f"Opened file: {filepath}")
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to open file: {str(e)}")
 
@@ -163,15 +138,13 @@ class SecureFileManager:
             return
 
         filepath = filedialog.asksaveasfilename(defaultextension=".txt",
-                                                filetypes=[("Text Files", "*.txt"),
-                                                           ("All Files", "*.*")])
+                                                filetypes=[("Text Files", "*.txt"), ("All Files", "*.*")])
         if filepath:
             try:
                 content = self.file_content.get(1.0, tk.END)
                 with open(filepath, "w", encoding="utf-8") as f:
                     f.write(content)
                 self.status_var.set(f"Saved: {os.path.basename(filepath)}")
-                self.log_security_event(f"Saved file: {filepath}")
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to save file: {str(e)}")
 
@@ -181,11 +154,15 @@ class SecureFileManager:
             messagebox.showerror("Error", "Please login first!")
             return
 
-        content = self.file_content.get(1.0, tk.END).encode()
-        encrypted = self.cipher.encrypt(content)
+        content = self.file_content.get(1.0, tk.END).strip()
+        if not content:
+            messagebox.showerror("Error", "No content to encrypt!")
+            return
+
+        encrypted = self.cipher.encrypt(content.encode('utf-8'))
         self.file_content.delete(1.0, tk.END)
-        self.file_content.insert(tk.END, encrypted.decode('latin-1'))
-        self.log_security_event("File content encrypted")
+        self.file_content.insert(tk.END, encrypted.decode('utf-8'))  # Store as string
+        self.status_var.set("File Encrypted")
 
     def decrypt_file(self):
         """Decrypt file content"""
@@ -193,11 +170,18 @@ class SecureFileManager:
             messagebox.showerror("Error", "Please login first!")
             return
 
-        content = self.file_content.get(1.0, tk.END).encode('latin-1')
-        decrypted = self.cipher.decrypt(content)
-        self.file_content.delete(1.0, tk.END)
-        self.file_content.insert(tk.END, decrypted.decode())
-        self.log_security_event("File content decrypted")
+        content = self.file_content.get(1.0, tk.END).strip()
+        if not content:
+            messagebox.showerror("Error", "No content to decrypt!")
+            return
+
+        try:
+            decrypted = self.cipher.decrypt(content.encode('utf-8'))
+            self.file_content.delete(1.0, tk.END)
+            self.file_content.insert(tk.END, decrypted.decode('utf-8'))
+            self.status_var.set("File Decrypted")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to decrypt: {str(e)}")
 
 if __name__ == "__main__":
     root = tk.Tk()
